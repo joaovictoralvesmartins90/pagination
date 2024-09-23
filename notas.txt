@@ -1,0 +1,58 @@
+Paginação
+
+Dependendo de como a aplicação for feita, ao realizar consultas, todos os resultados podem ser trazidos, o que pode causar impactos no desempenho
+do programa. Uma abordagem para resolver é com o uso de paginação, onde ao invés de pesquisar todos os registros, se limita quais são retornados
+por um registro de início e um registro de fim. Por exemplo:
+
+busca(inicio, fim) -> busca(1, 10) -> começa do registro de "índice" 1, e traz os 10 primeiros.
+busca(11, 20) -> do 11 ao 20, e por aí vai
+
+
+Benefícios:
+
+-O servidor limita o que vai ser retornado, otimizando recursos do servidor
+-Escalabilidade: o servidor consegue lidar melhor com muitas requisições
+-Balanceamento: o servidor consegue destribuir a carga de serviços
+-Menos latência: menos registros no retorno, mais rapidamente são retornados
+
+Do lado do cliente:
+
+-Uma melhor experiência de usuário
+-Menos dados transferidos para o cliente, otimizando o tempo de resposta
+-Menos processamento requerido do lado do cliente
+
+
+==============
+
+Filtro de resultados
+
+Baseado nos nossos modelos, podemos definir quais parâmetros serão usados para filtrar os resultados, reduzindo assim, o número de informações retornadas.
+Eles são passados por query.
+
+Um ponto a se observar:
+
+Uma consulta do EF seria:
+
+var items = await appDbContext.Items.ToArrayAsync();
+
+Geralmente, ao aplicar filtros, se usa o Where:
+
+var items = await appDbContext.Items.ToArrayAsync().Where(i => i.Atributo == algum valor);
+
+No final das contas, o resultado vai ser o esperado. No entanto, o Where neste caso está sendo aplicado diretamente em todos os resultados na memória e não
+no banco de dados. Se vermos o SQL gerado, vai ser possível identificar que não tem cláusula where.
+
+O que se pode fazer é: se o usuário usar CQRS, passar diretamente pro repositório, e não tratar no handler, pois geralmente, nele não se tem o contexto do
+banco de dados.
+
+Um exemplo seria:
+
+[HttpGet]
+[Route("matching")]
+public async Task<IActionResult> GetMatchingStuff([FromQuery] string searchPhrase)
+{
+    var items = await appDbContext.Items.Where(i => i.PropertyOne.ToLower().Contains(searchPhrase.ToLower())
+    || i.PropertyTwo.ToLower().Contains(searchPhrase.ToLower())).ToArrayAsync();
+    return Ok(items);
+
+}

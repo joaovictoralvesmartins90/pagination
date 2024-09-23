@@ -17,6 +17,16 @@ public class ItensController(AppDbContext appDbContext) : ControllerBase
 
     }
 
+    [HttpGet]
+    [Route("matching")]
+    public async Task<IActionResult> GetMatchingStuff([FromQuery] string searchPhrase)
+    {
+        var items = await appDbContext.Items.Where(i => i.PropertyOne.ToLower().Contains(searchPhrase.ToLower())
+        || i.PropertyTwo.ToLower().Contains(searchPhrase.ToLower())).ToArrayAsync();
+        return Ok(items);
+
+    }
+
     [HttpPost]
     public async Task<IActionResult> PostStuff([FromBody] ItemDto itemDto)
     {
