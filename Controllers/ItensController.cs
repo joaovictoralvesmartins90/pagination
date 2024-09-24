@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using pagination.Context;
 using pagination.Models;
+using pagination.Queries;
 
 namespace pagination.Controllers;
 
@@ -10,20 +11,30 @@ namespace pagination.Controllers;
 public class ItensController(AppDbContext appDbContext) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> GetStuff()
+    public async Task<IActionResult> GetMatchingStuff([FromQuery] ItemQuery itemQuery)
     {
-        var items = await appDbContext.Items.ToArrayAsync();
-        return Ok(items);
+        var searchPhraseLower = itemQuery.SearchPhrase.ToLower();
 
-    }
+        var baseQuery = appDbContext.Items.Where(i => searchPhraseLower == null
+            || (i.PropertyOne.ToLower().Contains(searchPhraseLower))
+            || (i.PropertyTwo.ToLower().Contains(searchPhraseLower)));
 
-    [HttpGet]
-    [Route("matching")]
-    public async Task<IActionResult> GetMatchingStuff([FromQuery] string searchPhrase)
-    {
-        var items = await appDbContext.Items.Where(i => i.PropertyOne.ToLower().Contains(searchPhrase.ToLower())
-        || i.PropertyTwo.ToLower().Contains(searchPhrase.ToLower())).ToArrayAsync();
-        return Ok(items);
+        var totalItems = await baseQuery.CountAsync();
+
+        var items = await baseQuery
+            .Skip(itemQuery.PageSize * (itemQuery.PageNumber - 1))
+            .Take(itemQuery.PageSize)
+            .ToListAsync();
+
+        List<ItemDto> itemsDto = items.Select(a => new ItemDto()
+        {
+            PropertyOne = a.PropertyOne,
+            PropertyTwo = a.PropertyTwo,
+        }).ToList();
+
+        var results = new PagedResult<ItemDto>(itemsDto, totalItems, itemQuery.PageSize, itemQuery.PageNumber);
+
+        return Ok(results);
 
     }
 

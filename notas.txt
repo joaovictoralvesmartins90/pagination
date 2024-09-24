@@ -56,3 +56,81 @@ public async Task<IActionResult> GetMatchingStuff([FromQuery] string searchPhras
     return Ok(items);
 
 }
+
+===========
+
+Paginação em si é o processo de retornar dados em "pacotes". Por exemplo, no lado do cliente, ele pode requisitar que sejam retornados 10,20 ou até 
+mais registros por página. Agora, além de passar um critério de busca, devemos passar também o tamanho da página (quantos registros por página) e
+qual página queremos. Através de uma fórmula, podemos calcular o intervalo exato. E no retorno para o cliente, devemos retornar quatro coisas:
+resultados, total de resultados, total de páginas e o intervalo de resultados.
+
+
+var searchPhraseLower = itemQuery.SearchPhrase.ToLower();
+var items = await appDbContext.Items.Where(i => searchPhraseLower == null
+    || (i.PropertyOne.ToLower().Contains(searchPhraseLower))
+    || (i.PropertyTwo.ToLower().Contains(searchPhraseLower)))
+    .Skip(itemQuery.PageSize * (itemQuery.PageNumber - 1))
+    .Take(itemQuery.PageSize)
+    .ToListAsync();
+return Ok(items);
+
+A fórmula seria a de cima. No entanto, como precisamos retornar mais informações, podemos encapsular tudo em uma classe:
+
+
+namespace pagination.Queries;
+
+public class PagedResult<T>
+{
+    public PagedResult(List<T> items, int totalCount, int pageSize, int pageNumber)
+    {
+        Items = items;
+        TotalItemsCount = totalCount;
+        TotalPages = (int)Math.Ceiling((totalCount / (double)pageSize));
+        ItemsFrom = pageSize * (pageNumber - 1) + 1;
+        ItemsTo = ItemsFrom + pageSize - 1;
+    }
+
+    public List<T> Items { get; set; }
+    public int TotalPages { get; set; }
+    public int TotalItemsCount { get; set; }
+    public int ItemsFrom { get; set; }
+    public int ItemsTo { get; set; }
+}
+
+A primeira coisa é definir a classe genérica, pois a mesma lógica aqui pode ser usada para diferentes tipos de entidade. 
+O que vai ser retornado pro cliente: total de páginas, total de itens, itens de e itens até.
+
+Supondo que: total de itens == 20, tamanho da página seja 5
+
+1)Items vai ser a lista dos itens
+2)TotalItemsCount = tamanho da lista de items
+3)Total de páginas = total de registros / tamanho da página arredondado pra cima. Por exemplo: Total = 20 e tamanho da página = 5 -> 4 páginas (não precisa arredondar).
+Total = 20, tamanho da página = 3 -> 20 / 3 = 6.666.... arredondado = 7 páginas
+4)ItemsFrom = tamanho da página * (numero da página - 1) + 1: tamanho = 5 e número da página = 2, então: 5 * (2 - 1) + 1 == 6
+5)ItemsTo = ItemsFrom + tamanho da página - 1: 6 + 5 - 1 == 10
+
+Se for usar cqrs + mediator, o retorno do handler vai ser uma lista de PagedResult<T> ao invés da própria lista. Pra facilitar, podemos mapear usando
+automapper:
+
+
+var baseQuery = appDbContext.Items.Where(i => searchPhraseLower == null
+            || (i.PropertyOne.ToLower().Contains(searchPhraseLower))
+            || (i.PropertyTwo.ToLower().Contains(searchPhraseLower)));
+
+var totalItems = await baseQuery.CountAsync();
+
+var items = await baseQuery
+    .Skip(itemQuery.PageSize * (itemQuery.PageNumber - 1))
+    .Take(itemQuery.PageSize)
+    .ToListAsync();
+
+List<ItemDto> itemsDto = items.Select(a => new ItemDto()
+{
+    PropertyOne = a.PropertyOne,
+    PropertyTwo = a.PropertyTwo,
+}).ToList();
+
+var results = new PagedResult<ItemDto>(itemsDto, totalItems, itemQuery.PageSize, itemQuery.PageNumber);
+
+Já que passando apenas o items.count não basta, pois pode vir com valores errados após a filtragem, precisamos separar a query em duas: uma para os registros
+e outra apenas para a paginação
